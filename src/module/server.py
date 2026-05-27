@@ -16,23 +16,31 @@ def reliable_send(target_socket, data):
     data_len = struct.pack(">I", len(json_data))
     target_socket.sendall(data_len + json_data)
 
+def recv_all(s, n):
+    """
+    確保從 socket 讀取精確的 n 個 bytes，防止 TCP 緩衝區分段問題
+    """
+    data = bytearray()
+    while len(data) < n:
+        packet = s.recv(n - len(data))
+        if not packet:
+            return None
+        data.extend(packet)
+    return bytes(data)
+
 def reliable_recv(target_socket):
     """
     先讀取 4 bytes 表頭獲取長度，再精確讀取完整的資料內容。
     """
     try:
-        header = target_socket.recv(4)
+        header = recv_all(target_socket, 4)
         if not header:
             return None
         data_len = struct.unpack(">I", header)[0]
         
-        # 循環讀取直到滿足該長度
-        data = bytearray()
-        while len(data) < data_len:
-            packet = target_socket.recv(min(data_len - len(data), 4096))
-            if not packet:
-                return None
-            data.extend(packet)
+        data = recv_all(target_socket, data_len)
+        if not data:
+            return None
             
         return json.loads(data.decode("utf-8"))
     except (socket.error, json.JSONDecodeError):

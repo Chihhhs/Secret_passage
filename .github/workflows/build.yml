@@ -21,10 +21,11 @@ jobs:
 
     - name: Build EXE
       run: |
-        pyinstaller --onefile --noconsole Client.py
+        pyinstaller --onefile --noconsole src/module/client.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: Client-EXE
-        path: dist/Client.exe
+        path: dist/client.exe    - name: Build Server EXE
+

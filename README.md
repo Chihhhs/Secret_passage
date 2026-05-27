@@ -24,4 +24,3 @@
   + `apt update`
 
   + `apt install -t parrot-backports wine32`
-  
