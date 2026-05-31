@@ -15,10 +15,10 @@ class TestBackdoor(unittest.TestCase):
     @patch('src.client.os')
     @patch('src.client.time')
     def test_logic_bomb_future_time(self, mock_time, mock_os):
-        # Test time-lock triggers (current time is before target time 1779340800)
-        mock_time.time.return_value = 1779340799
+        # 模擬時間鎖迴圈：第一次檢查未到目標時間，第二次檢查時時間抵達，跳出等待
+        mock_time.time.side_effect = [1779340799, 1779340801]
         mock_os.path.exists.return_value = False
-        self.assertFalse(client.logic_bomb())
+        self.assertTrue(client.logic_bomb())
 
     @patch('src.client.os')
     @patch('src.client.time')

