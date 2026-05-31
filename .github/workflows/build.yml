@@ -28,4 +28,3 @@ jobs:
       with:
         name: Client-EXE
         path: dist/client.exe
-
