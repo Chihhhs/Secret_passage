@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows EXE + DLL
 
 on: [push, workflow_dispatch]
 
@@ -19,12 +19,34 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Build EXE
+    - name: Build Client EXE
       run: |
-        pyinstaller --onefile --noconsole src/module/client.py
+        pyinstaller --onefile --noconsole --name client src/module/client.py
 
-    - name: Upload Artifact
+    - name: Build hidden.dll (MSVC)
+      run: |
+        # 使用 MSVC 編譯 hidden.dll
+        # MinHook 已包含在 src/ptr/include/ 中
+        # 需要連結 MinHook 靜態庫
+        cd src/ptr
+        cl /LD /EHsc /O2 /I include src/hidden.cpp /Fe:hidden.dll /link ntdll.lib
+      shell: cmd
+      continue-on-error: true  # 如果 MinHook 庫不存在則跳過
+
+    - name: Prepare artifacts
+      run: |
+        mkdir -p artifacts
+        copy dist\client.exe artifacts\
+        if exist src\ptr\hidden.dll copy src\ptr\hidden.dll artifacts\
+
+    - name: Upload Client EXE
       uses: actions/upload-artifact@v4
       with:
         name: Client-EXE
-        path: dist/client.exe
+        path: artifacts/client.exe
+
+    - name: Upload hidden.dll
+      uses: actions/upload-artifact@v4
+      with:
+        name: Hidden-DLL
+        path: artifacts/hidden.dll
