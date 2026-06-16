@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows EXE + DLL
 
 on: [push, workflow_dispatch]
 
@@ -19,12 +19,40 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Build EXE
+    - name: Build Client EXE
       run: |
-        pyinstaller --onefile --noconsole src/module/client.py
+        pyinstaller --onefile --noconsole --name client src/module/client.py
 
-    - name: Upload Artifact
+    - name: Clone and build MinHook
+      shell: cmd
+      run: |
+        git clone --depth 1 https://github.com/TsudaKageyu/minhook.git C:\minhook
+        cd C:\minhook
+        cl /LD /EHsc /O2 /MT src\hook.c src\buffer.c src\trampoline.c src\hde\hde32.c src\hde\hde64.c /Fe:MinHook.x64.dll /link /DLL /IMPLIB:MinHook.x64.lib
+      continue-on-error: true
+
+    - name: Build hidden.dll (MSVC)
+      shell: cmd
+      run: |
+        cd src\ptr
+        cl /LD /EHsc /O2 /I include /I C:\minhook\include hidden.cpp /Fe:hidden.dll /link C:\minhook\MinHook.x64.lib ntdll.lib
+      continue-on-error: true
+
+    - name: Prepare artifacts
+      shell: cmd
+      run: |
+        if not exist artifacts mkdir artifacts
+        copy dist\client.exe artifacts\
+        if exist src\ptr\hidden.dll copy src\ptr\hidden.dll artifacts\
+
+    - name: Upload Client EXE
       uses: actions/upload-artifact@v4
       with:
         name: Client-EXE
-        path: dist/client.exe
+        path: artifacts/client.exe
+
+    - name: Upload hidden.dll
+      uses: actions/upload-artifact@v4
+      with:
+        name: Hidden-DLL
+        path: artifacts/hidden.dll
